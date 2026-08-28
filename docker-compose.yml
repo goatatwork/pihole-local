@@ -1,0 +1,28 @@
+# Pi-hole for localhost-only DNS on macOS.
+#
+# Ports bind to 127.0.0.1 ONLY. This is deliberate: Docker Desktop's port
+# forwarding rewrites the source address of every packet to the VM gateway,
+# so Pi-hole cannot distinguish LAN clients anyway, and an all-interfaces
+# bind would expose an open resolver to the network. See README "Why not the LAN".
+services:
+  pihole:
+    image: pihole/pihole:${PIHOLE_TAG:-latest}
+    container_name: pihole
+    hostname: pihole
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:53:53/udp"
+      - "127.0.0.1:53:53/tcp"
+      - "127.0.0.1:${WEB_PORT:-8089}:80/tcp"
+    environment:
+      TZ: ${TZ:-UTC}
+      FTLCONF_webserver_api_password: ${PIHOLE_PASSWORD:?set PIHOLE_PASSWORD in .env}
+      # Every query arrives from the Docker bridge gateway, which Pi-hole's
+      # default "local" listening mode treats as non-local and refuses.
+      FTLCONF_dns_listeningMode: all
+      FTLCONF_dns_upstreams: ${UPSTREAMS:-1.1.1.1;9.9.9.9}
+      FTLCONF_misc_etc_dnsmasq_d: 'false'
+    volumes:
+      - ./etc-pihole:/etc/pihole
+    cap_add:
+      - SYS_NICE
