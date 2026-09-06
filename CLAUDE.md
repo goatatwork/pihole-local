@@ -15,13 +15,14 @@ change to `docker-compose.yml`.
 ## Commands
 
 ```bash
-./scripts/setup.sh      # bootstrap (idempotent)
-./scripts/watchdog.sh   # one-shot UDP/53 probe + restart-if-dead
-./scripts/verify.sh     # end-to-end checks, mutates nothing — use as the test
-./scripts/status.sh     # container state, version, active system resolver
-./scripts/update.sh     # update Pi-hole image + blocklists
-./scripts/dns-on.sh     # point macOS at Pi-hole (sudo)
-./scripts/dns-off.sh    # restore previous/DHCP DNS (sudo)
+./scripts/setup.sh              # bootstrap (idempotent)
+./scripts/watchdog.sh           # one-shot UDP/53 probe + restart-if-dead
+./scripts/verify.sh             # end-to-end checks, mutates nothing — use as the test
+./scripts/status.sh             # container state, version, active system resolver
+./scripts/update.sh             # update Pi-hole image + blocklists
+./scripts/dns-on.sh             # point macOS at Pi-hole (sudo)
+./scripts/dns-off.sh            # restore previous/DHCP DNS (sudo)
+./scripts/fix-docker-network.sh # disable the Docker Desktop options that break port 53
 ```
 
 `bash -n scripts/*.sh` to syntax-check.
@@ -44,6 +45,36 @@ it explains both non-obvious settings in `docker-compose.yml`:
 The proxy also rewrites source addresses, so per-client stats and per-client
 groups cannot work. That is accepted, not a bug to fix — serving the LAN is
 explicitly out of scope (README explains the alternative).
+
+### Docker Desktop options that silently break port 53
+
+Two toggles under **Settings → Resources → Network** move Docker Desktop off
+the default userspace (gvisor) path and onto a `vmnet` interface:
+
+- **Use kernel networking for UDP** (`kernelForUDP`)
+- **Enable host networking** (`hostNetworkingEnabled`)
+
+Either one creates a `bridge100`/`vmenet0` interface. macOS reacts by starting
+its Internet-Sharing stack, which **binds `mDNSResponder` to `*:53`** — so the
+container can no longer publish `127.0.0.1:53` and `docker compose up` fails
+with:
+
+```text
+ports are not available: exposing port UDP 127.0.0.1:53 -> 127.0.0.1:0: port is already allocated
+```
+
+Signature to recognise it: that error, `sudo lsof -iUDP:53` shows
+`mDNSResponder` on `*:53`, and `ifconfig` shows a `bridge100` **that comes back
+after every Docker restart and even after a reboot** — an ordinary port
+conflict does neither. Someone enabling `kernelForUDP` to "make UDP more
+reliable" is the likely origin; the working reference machine has both off.
+
+Handled in code: `lib.sh:check_docker_net_mode` detects it, `setup.sh` refuses
+to run until it's clear, `verify.sh` flags it, and `scripts/fix-docker-network.sh`
+turns both off via Docker Desktop's backend socket
+(`~/Library/Containers/com.docker.docker/Data/backend.sock`) and restarts
+Docker. The settings themselves can't be edited from a file over SSH (TCC
+protects the `group.com.docker` container) — only the GUI or that socket.
 
 **On the UDP proxy's reliability.** It was stress-tested (gravity incl. forced
 re-download, repeated `--force-recreate`, `restartdns`, >512 B DNSSEC

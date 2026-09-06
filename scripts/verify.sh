@@ -6,6 +6,14 @@ load_env
 
 fail=0
 
+c_info "Docker Desktop networking mode"
+net_mode_ok=1
+if check_docker_net_mode; then
+  c_ok "userspace path — no vmnet/port-53 conflict"
+else
+  net_mode_ok=0; fail=1
+fi
+
 c_info "Container state"
 if [ "$(docker inspect -f '{{.State.Running}}' pihole 2>/dev/null)" = "true" ]; then
   c_ok "pihole running ($(docker inspect -f '{{.Config.Image}}' pihole))"
@@ -18,6 +26,7 @@ if out=$(dig +short +timeout=3 +tries=1 @127.0.0.1 example.com A 2>&1) && [ -n "
   c_ok "UDP: example.com -> $(echo "$out" | head -1)"
 else
   c_err "UDP query failed: $out"; fail=1
+  [ "$net_mode_ok" = 0 ] && c_warn "  ^ likely the Docker Desktop networking mode flagged above — scripts/fix-docker-network.sh"
 fi
 
 c_info "TCP/53 resolution via 127.0.0.1"

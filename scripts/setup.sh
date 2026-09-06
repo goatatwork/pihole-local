@@ -2,6 +2,7 @@
 # One-shot bootstrap. Safe to re-run.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 require_docker
+check_docker_net_mode || die "Fix Docker Desktop networking first (see above), then re-run."
 
 if [ ! -f .env ]; then
   pw=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)

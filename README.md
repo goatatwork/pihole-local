@@ -33,6 +33,7 @@ git clone <this repo> && cd pihole-local
 | `scripts/update.sh` | Update Pi-hole itself **and** its blocklists. |
 | `scripts/verify.sh` | End-to-end checks; touches nothing. |
 | `scripts/status.sh` | Container state, Pi-hole version, active system resolver. |
+| `scripts/fix-docker-network.sh` | Turn off the Docker Desktop network options that stop the container binding port 53, then restart Docker. `-y` skips the prompt. |
 | `scripts/watchdog.sh` | Probe UDP/53; restart the container if it stops answering. |
 | `scripts/watchdog-install.sh` | Opt-in: run the watchdog every 2 min via launchd. `--uninstall` to remove. |
 
@@ -168,14 +169,27 @@ sudo networksetup -setdnsservers Wi-Fi Empty
 sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder
 ```
 
-**`bind: address already in use` on port 53.** Something else holds the port:
+**`port is already allocated` / `bind: address already in use` on port 53.**
+Something else holds the port:
 
 ```bash
 sudo lsof -nP -iUDP:53 -iTCP:53
 ```
 
-Common culprits: another Pi-hole/dnsmasq container, `mDNSResponder` in an
-unusual configuration, or a VPN client's resolver.
+Common culprits: another Pi-hole/dnsmasq container or a VPN client's resolver.
+
+If `lsof` shows **`mDNSResponder` on `*:53`** and `ifconfig` shows a `bridge100`
+that reappears every time Docker restarts, the cause is a Docker Desktop
+network option — **"Use kernel networking for UDP"** or **"Enable host
+networking"** (Settings → Resources → Network). Either one puts Docker on a
+`vmnet` interface, which makes macOS bind `mDNSResponder` to port 53. A reboot
+does **not** clear it. Fix:
+
+```bash
+./scripts/fix-docker-network.sh    # turns both off, restarts Docker Desktop
+```
+
+`setup.sh` and `verify.sh` now check for this and point you here.
 
 **Queries work with `dig @127.0.0.1` but the browser is unfiltered.** The
 system resolver has not picked up the change, or the browser is using
